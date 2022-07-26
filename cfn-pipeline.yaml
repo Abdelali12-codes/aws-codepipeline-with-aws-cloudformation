@@ -1,0 +1,186 @@
+Parameters:
+
+  EC2TagKey0:
+    Type: String
+    Default: ec2TagKey0
+    
+  EC2TagValue0:
+    Type: String
+    Default: ec2TagValue0
+    
+  EC2TagKey1:
+    Type: String
+    Default: ec2TagKey1
+    
+  EC2TagValue1:
+    Type: String
+    Default: ec2TagValue1
+    
+  RepoName:
+    Type: String
+    
+  BranchName:
+    Type: String
+  CodeDeployServiceRole:
+    Type: String
+
+Resources:
+
+    # s3 bucket
+
+    # sns topic
+    
+    
+    # cloudwatch alarm
+    myAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        Namespace: AWS/Billing
+        MetricName: EstimatedCharges
+        Statistic: Maximum
+        Period: '21600'
+        EvaluationPeriods: '1'
+        Threshold: 1000
+        ComparisonOperator: GreaterThanThreshold
+
+    #codecommit repo
+    MyRepo:
+      Type: AWS::CodeCommit::Repository
+      Properties:
+        RepositoryName: MyDemoRepo
+        RepositoryDescription: This is a repository for my project with code from MySourceCodeBucket.
+        Code:
+          BranchName: !Ref BranchName
+          S3: 
+            Bucket: MySourceCodeBucket
+            Key: MyKey
+            ObjectVersion: 1
+            
+    #codebuild project
+    CodeBuildProject:
+      Type: AWS::CodeBuild::Project
+      Properties:
+        ServiceRole: !GetAtt CodeBuildRole.Arn
+        Artifacts:
+          Type: CODEPIPELINE
+        Environment:
+          Type: LINUX_CONTAINER
+          ComputeType: BUILD_GENERAL1_SMALL
+          Image: aws/codebuild/ubuntu-base:14.04
+          EnvironmentVariables:
+            - Name: varName1
+              Value: varValue1
+        Source:
+          Type: CODEPIPELINE
+        TimeoutInMinutes: 10
+        
+        
+    
+    # codedeploy application
+    
+    CodeDeployApplication: 
+      Type: AWS::CodeDeploy::Application 
+      Properties:
+        ComputePlatform: Server
+      
+    # codedeploy config
+    CodeDeployConfig:
+      Type: AWS::CodeDeploy::DeploymentConfig
+      Properties: 
+        ComputePlatform: Server
+        DeploymentConfigName: cloudformationcodedeployconfig
+        MinimumHealthyHosts: 
+           Type: HOST_COUNT
+           Value: 1
+
+    AppDeploymentGroup:
+        Type: AWS::CodeDeploy::DeploymentGroup
+        Properties:
+          ApplicationName: !Ref CodeDeployApplication
+          ServiceRoleArn: !Ref CodeDeployServiceRole    
+          DeploymentGroupName: !Ref DeploymentGroupName
+          Ec2TagFilters:
+            - Key: !Ref EC2TagKey0
+              Value: !Ref EC2TagValue0
+              Type: KEY_AND_VALUE
+          AutoRollbackConfiguration:
+               Enabled: True
+               Events:
+                  - DEPLOYMENT_FAILURE
+                  
+                  
+    # codepipeline
+    
+    AppPipeline:
+      Type: 'AWS::CodePipeline::Pipeline'
+      Properties:
+        Name: codecommit-events-pipeline
+        RoleArn: !GetAtt 
+          - CodePipelineServiceRole
+          - Arn
+        Stages:
+          - Name: Source
+            Actions:
+              - Name: SourceAction
+                ActionTypeId:
+                  Category: Source
+                  Owner: AWS
+                  Version: 1
+                  Provider: CodeCommit
+                OutputArtifacts:
+                  - Name: SourceOutput
+                Configuration:
+                  BranchName: !Ref BranchName
+                  RepositoryName: !Ref RepoName
+                  PollForSourceChanges: false
+                RunOrder: 1
+          - Name: Deploy
+            Actions:
+              - Name: DeployAction
+                InputArtifacts:
+                  - Name: SourceOutput
+                ActionTypeId:
+                  Category: Deploy
+                  Owner: AWS
+                  Version: 1
+                  Provider: CodeDeploy
+                Configuration:
+                  ApplicationName: !Ref ApplicationName
+                  DeploymentGroupName: !Ref DeploymentGroupName
+                RunOrder: 1
+        ArtifactStore:
+          Type: S3
+          Location: !Ref CodePipelineArtifactStoreBucket
+    
+    
+    
+    # service roles
+    CodeBuildRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Statement:
+          - Action: ['sts:AssumeRole']
+            Effect: Allow
+            Principal:
+              Service: [codebuild.amazonaws.com]
+          Version: '2012-10-17'
+        Path: /
+        Policies:
+          - PolicyName: CodeBuildAccess
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Action:
+                  - 'logs:*'
+                  - 'ec2:CreateNetworkInterface'
+                  - 'ec2:DescribeNetworkInterfaces'
+                  - 'ec2:DeleteNetworkInterface'
+                  - 'ec2:DescribeSubnets'
+                  - 'ec2:DescribeSecurityGroups'
+                  - 'ec2:DescribeDhcpOptions'
+                  - 'ec2:DescribeVpcs'
+                  - 'ec2:CreateNetworkInterfacePermission'
+                  Effect: Allow
+                  Resource: '*'
+    
