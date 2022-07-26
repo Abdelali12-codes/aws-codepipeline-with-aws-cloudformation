@@ -21,12 +21,43 @@ Parameters:
     
   BranchName:
     Type: String
+    
   CodeDeployServiceRole:
     Type: String
+    
+  S3bucketKey:
+     Type: String
+     Default: codecommitcode
 
 Resources:
 
     # s3 bucket
+   
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+    DeletionPolicy: Retain
+  BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      PolicyDocument:
+        Id: MyPolicy
+        Version: 2012-10-17
+        Statement:
+          - Sid: PublicReadForGetBucketObjects
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3Bucket
+                - /*
+      Bucket: !Ref S3Bucket
 
     # sns topic
     
@@ -52,9 +83,8 @@ Resources:
         Code:
           BranchName: !Ref BranchName
           S3: 
-            Bucket: MySourceCodeBucket
-            Key: MyKey
-            ObjectVersion: 1
+            Bucket: !Ref S3Bucket
+            Key: !Ref S3bucketKey
             
     #codebuild project
     CodeBuildProject:
