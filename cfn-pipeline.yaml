@@ -28,40 +28,93 @@ Parameters:
   S3bucketKey:
      Type: String
      Default: codecommitcode
+  KeyName:
+     Type: AWS::EC2::KeyPair::KeyName
+     
+  SubnetId:
+      Type: AWS::EC2::Subnet::Id
+      
+  AvailabilityZone:
+      Type: AWS::EC2::AvailabilityZone::Name
+      
+      
+  VpcId:
+      Type: AWS::EC2::VPC::Id
 
 Resources:
 
-  S3ArtifactStore:
-    Type: 'AWS::S3::Bucket'
-    Properties: {}
-        
+    # ec2 security group
+    
+    Ec2SSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties: 
+        GroupDescription: Security group for ec2 allow ssh and http
+        GroupName: ec2-cloudformation-sg
+        SecurityGroupEgress: 
+          - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !GetAtt 
+                - LoadBalancerSg
+                - GroupId
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        SecurityGroupIngress: 
+          - IpProtocol: "-1"
+            CidrIp: 0.0.0.0/0
+        Tags: 
+          - Tag
+        VpcId: !Ref VpcId
+
+
+    # ec2 instance
+    
+    Ec2Instance: 
+      Type: AWS::EC2::Instance
+      Properties: 
+        ImageId: ami-0f5094faf16f004eb
+        InstanceType: t2.medium
+        AvailabilityZone: AvailabilityZone
+        SubnetId: !Ref SubnetId
+        Tags:
+           - Key: !Ref EC2TagKey0
+             Value: !Ref EC2TagValue0
+             
+           - Key: !Ref EC2TagKey1
+             Value: !Ref EC2TagValue1
+             
+        BlockDeviceMappings: 
+          - DeviceName: "/dev/sdm"
+            Ebs: 
+              VolumeType: "io1"
+              Iops: "200"
+              DeleteOnTermination: "false"
+              VolumeSize: "20"
+        SecurityGroups: 
+            - String
+        Volumes:
+           - Device: String
+             VolumeId: String
+        UserData:
+           
+
+        KeyName: 
+          Ref: !Ref KeyName
+        NetworkInterfaces: 
+          - AssociatePublicIpAddress: "true"
+            DeviceIndex: "0"
+            GroupSet: 
+              - Ref: "myVPCEC2SecurityGroup"
+            SubnetId: 
+              Ref: "PublicSubnet"
 
     # s3 bucket
-  S3Bucket:
-    Type: 'AWS::S3::Bucket'
-    Properties:
-      AccessControl: PublicRead
-      WebsiteConfiguration:
-        IndexDocument: index.html
-        ErrorDocument: error.html
-    DeletionPolicy: Retain
-  BucketPolicy:
-    Type: 'AWS::S3::BucketPolicy'
-    Properties:
-      PolicyDocument:
-        Id: MyPolicy
-        Version: 2012-10-17
-        Statement:
-          - Sid: PublicReadForGetBucketObjects
-            Effect: Allow
-            Principal: '*'
-            Action: 's3:GetObject'
-            Resource: !Join 
-              - ''
-              - - 'arn:aws:s3:::'
-                - !Ref S3Bucket
-                - /*
-      Bucket: !Ref S3Bucket
+    S3ArtifactStore:
+      Type: 'AWS::S3::Bucket'
+      Properties: {}
+     
 
     # sns topic
     SnsTopic:
@@ -89,8 +142,8 @@ Resources:
         Code:
           BranchName: !Ref BranchName
           S3: 
-            Bucket: !Ref S3Bucket
-            Key: !Ref S3bucketKey
+            Bucket: cloudformation-pipeline-27 
+            Key:  SampleApp_Linux
             
     #codebuild project
     CodeBuildProject:
