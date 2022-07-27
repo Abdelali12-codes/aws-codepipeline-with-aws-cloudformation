@@ -60,18 +60,20 @@ Resources:
       Bucket: !Ref S3Bucket
 
     # sns topic
-    
+    SnsTopic:
+      Type: AWS::SNS::Topic
+      Properties: {}
     
     # cloudwatch alarm
-    myAlarm:
+    CpuUtilizationAlarm:
       Type: AWS::CloudWatch::Alarm
       Properties:
-        Namespace: AWS/Billing
-        MetricName: EstimatedCharges
-        Statistic: Maximum
-        Period: '21600'
-        EvaluationPeriods: '1'
-        Threshold: 1000
+        Namespace: AWS/EC2
+        MetricName: CPUUtilization
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 3
+        Threshold: 80
         ComparisonOperator: GreaterThanThreshold
 
     #codecommit repo
@@ -126,6 +128,11 @@ Resources:
     AppDeploymentGroup:
         Type: AWS::CodeDeploy::DeploymentGroup
         Properties:
+          AlarmConfiguration: 
+            Alarms: 
+              - Name: !Ref CpuUtilizationAlarm
+            Enabled: True
+            IgnorePollAlarmFailure: false
           ApplicationName: !Ref CodeDeployApplication
           ServiceRoleArn: !Ref CodeDeployServiceRole    
           DeploymentGroupName: !Ref DeploymentGroupName
@@ -133,10 +140,17 @@ Resources:
             - Key: !Ref EC2TagKey0
               Value: !Ref EC2TagValue0
               Type: KEY_AND_VALUE
+          
           AutoRollbackConfiguration:
                Enabled: True
                Events:
                   - DEPLOYMENT_FAILURE
+          TriggerConfigurations:
+            - TriggerEvents:
+                - DeploymentSuccess
+                - DeploymentFailure
+              TriggerName: MyTarget
+              TriggerTargetArn: !Ref mySNSTopic
                   
                   
     # codepipeline
