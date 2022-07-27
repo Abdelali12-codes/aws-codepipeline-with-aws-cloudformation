@@ -31,8 +31,12 @@ Parameters:
 
 Resources:
 
+  S3ArtifactStore:
+    Type: 'AWS::S3::Bucket'
+    Properties: {}
+        
+
     # s3 bucket
-   
   S3Bucket:
     Type: 'AWS::S3::Bucket'
     Properties:
@@ -150,7 +154,7 @@ Resources:
                 - DeploymentSuccess
                 - DeploymentFailure
               TriggerName: MyTarget
-              TriggerTargetArn: !Ref mySNSTopic
+              TriggerTargetArn: !Ref SnsTopic
                   
                   
     # codepipeline
@@ -194,7 +198,7 @@ Resources:
                 RunOrder: 1
         ArtifactStore:
           Type: S3
-          Location: !Ref CodePipelineArtifactStoreBucket
+          Location: !Ref S3ArtifactStore
     
     
     
@@ -227,4 +231,25 @@ Resources:
                   - 'ec2:CreateNetworkInterfacePermission'
                   Effect: Allow
                   Resource: '*'
-    
+                  
+    CodePipelineRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Statement:
+          - Action: ['sts:AssumeRole']
+            Effect: Allow
+            Principal:
+              Service: [codepipeline.amazonaws.com]
+          Version: '2012-10-17'
+        Path: /
+        Policies:
+          - PolicyName: CodepipelineAccess
+            PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                   - Action:
+                     - 
+                
+           
+      
