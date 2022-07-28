@@ -1,4 +1,32 @@
+Mappings: 
+  RegionMap: 
+    us-east-1: 
+      HVM64: "ami-0ff8a91507f77f867"
+      HVMG2: "ami-0a584ac55a7631c0c"
+    us-west-1: 
+      HVM64: "ami-0bdb828fd58c52235"
+      HVMG2: "ami-066ee5fd4a9ef77f1"
+    eu-west-1: 
+      HVM64: "ami-047bb4163c506cd98"
+      HVMG2: "ami-31c2f645"
+    ap-southeast-1: 
+      HVM64: "ami-08569b978cc4dfa10"
+      HVMG2: "ami-0be9df32ae9f92309"
+    ap-northeast-1: 
+      HVM64: "ami-06cd52961ce9f0d85"
+      HVMG2: "ami-053cdd503598e4a9d"
+
+
 Parameters:
+
+  InstanceType:
+    Description: Amazon EC2 instance type for the instances
+    Type: String
+    AllowedValues:
+      - t3.micro
+      - t2.micro
+      - t2.medium
+    Default: t2.medium
 
   EC2TagKey0:
     Type: String
@@ -28,20 +56,294 @@ Parameters:
   S3bucketKey:
      Type: String
      Default: codecommitcode
-  KeyName:
-     Type: AWS::EC2::KeyPair::KeyName
+      
+  Subnets:
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Description: A list of subnets for the Auto Scaling group
+      
+  HostedZoneId:
+     Description: The HostedZoneId
+     Type: AWS::Route53::HostedZone::Id
      
-  SubnetId:
-      Type: AWS::EC2::Subnet::Id
-      
-  AvailabilityZone:
-      Type: AWS::EC2::AvailabilityZone::Name
-      
-      
-  VpcId:
-      Type: AWS::EC2::VPC::Id
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+     
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.192.0.0/16
+
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.10.0/24
+
+  PublicSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.11.0/24
+
+  PrivateSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.20.0/24
+
+  PrivateSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.21.0/24
 
 Resources:
+    # keypair
+    KeyPair:
+      Type: AWS::EC2::KeyPair
+      Properties: 
+        KeyName: ec2-keypair
+        KeyType: rsa
+        Tags: 
+          - Key: Name
+            Value: ec2-keypair
+    # vpc 
+    VPC:
+      Type: AWS::EC2::VPC
+      Properties:
+        CidrBlock: !Ref VpcCIDR
+        EnableDnsSupport: true
+        EnableDnsHostnames: true
+        Tags:
+          - Key: Name
+            Value: !Ref EnvironmentName
+  
+    InternetGateway:
+      Type: AWS::EC2::InternetGateway
+      Properties:
+        Tags:
+          - Key: Name
+            Value: !Ref EnvironmentName
+  
+    InternetGatewayAttachment:
+      Type: AWS::EC2::VPCGatewayAttachment
+      Properties:
+        InternetGatewayId: !Ref InternetGateway
+        VpcId: !Ref VPC
+        
+    PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ1)
+
+    PublicSubnet2:
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+        CidrBlock: !Ref PublicSubnet2CIDR
+        MapPublicIpOnLaunch: true
+        Tags:
+          - Key: Name
+            Value: !Sub ${EnvironmentName} Public Subnet (AZ2)
+  
+    PrivateSubnet1:
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+        CidrBlock: !Ref PrivateSubnet1CIDR
+        MapPublicIpOnLaunch: false
+        Tags:
+          - Key: Name
+            Value: !Sub ${EnvironmentName} Private Subnet (AZ1)
+  
+    PrivateSubnet2:
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+        CidrBlock: !Ref PrivateSubnet2CIDR
+        MapPublicIpOnLaunch: false
+        Tags:
+          - Key: Name
+            Value: !Sub ${EnvironmentName} Private Subnet (AZ2)
+            
+    PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Routes
+
+    DefaultPublicRoute:
+      Type: AWS::EC2::Route
+      DependsOn: InternetGatewayAttachment
+      Properties:
+        RouteTableId: !Ref PublicRouteTable
+        DestinationCidrBlock: 0.0.0.0/0
+        GatewayId: !Ref InternetGateway
+  
+    PublicSubnet1RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref PublicRouteTable
+        SubnetId: !Ref PublicSubnet1
+  
+    PublicSubnet2RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref PublicRouteTable
+        SubnetId: !Ref PublicSubnet2
+  
+  
+    PrivateRouteTable1:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref VPC
+        Tags:
+          - Key: Name
+            Value: !Sub ${EnvironmentName} Private Routes (AZ1)
+    # ebs volume
+    EbsVolume:
+      Type: AWS::EC2::Volume
+      Properties: 
+        AvailabilityZone: !Ref AvailabilityZone
+        Size: 20
+        Tags: 
+          - Key: Name
+            Value: Ebs-volume
+        Throughput: 100
+        VolumeType: gp2
+
+    # ec2 instance
+    Ec2Instance: 
+      Type: AWS::EC2::Instance
+      Properties: 
+        ImageId: !FindInMap
+                 - Mappings
+                 - !Ref 'AWS::Region'
+                 - HVM64
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile: !Ref EC2InstanceProfile
+        AvailabilityZone: !GetAtt
+                          - PublicSubnet1
+                          - AvailabilityZone
+        SubnetId: !Ref PublicSubnet1
+        Tags:
+           - Key: !Ref EC2TagKey0
+             Value: !Ref EC2TagValue0
+             
+           - Key: !Ref EC2TagKey1
+             Value: !Ref EC2TagValue1
+             
+        BlockDeviceMappings: 
+          - DeviceName: "/dev/sda"
+            Ebs: 
+              VolumeType: "io1"
+              Iops: "200"
+              DeleteOnTermination: "false"
+              VolumeSize: "20"
+        SecurityGroupIds:
+             - GetAtt
+               - Ec2SSecurityGroup
+               - GroupId
+        Volumes:
+           - Device: /dev/sdb
+             VolumeId: !Ref EbsVolume
+        UserData:
+            Fn::Base64: !Sub |
+                #!/bin/bash
+                sudo amazon-linux-extras install nginx1 -y
+                sudo service nginx start
+                sudo yum install ruby -y
+                sudo yum install wget -y
+                cd /home/ec2-user
+                sudo wget https://aws-codedeploy-us-east-1.s3.amazonaws.com/latest/install
+                sudo chmod +x ./install
+                sudo ./install auto
+        KeyName: 
+          Ref: !Ref KeyPair
+
+    # elb sg
+    LoadBalancerSg:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Allow http to client host
+        Tags:
+           - Key: Name
+             Value: cloudformation-sg
+        VpcId: !Ref VPC
+        SecurityGroupIngress:
+  
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            CidrIp: 0.0.0.0/0
+  
+        SecurityGroupEgress:
+          - IpProtocol: "-1"
+            CidrIp: 0.0.0.0/0
+            
+    # elb and tg
+    
+    LoadBalancer:
+      Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+      Properties: 
+        
+        Name: clouformation-loadbalancer
+        Scheme: internet-facing
+        SecurityGroups: 
+          - !Ref LoadBalancerSg
+        Subnets: 
+           - !Ref PublicSubnet1
+           - !Ref PublicSubnet2
+        Tags: 
+          - Key: Name
+            Value: cloudformation-loadbalancer
+        Type: application
+
+    TargetGroup:
+      Type: AWS::ElasticLoadBalancingV2::TargetGroup
+      Properties: 
+        HealthCheckPath: /
+        HealthCheckPort: 80
+        HealthCheckProtocol: HTTP
+        Targets:
+           - AvailabilityZone: !GetAtt
+                               - PublicSubnet1
+                               - AvailabilityZone
+             Id: !Ref Ec2Instance
+             Port: 80
+
+        Name: cloudformation-targetgroup
+        Port: 80
+        Protocol: HTTP
+        Tags: 
+          - Key: Name
+            Value: cloudformation-targetgroup
+        VpcId: !Ref VPC
+      
+    # route53 record
+    ELBRecord:
+      Type: AWS::Route53::RecordSetGroup
+      Properties:
+        HostedZoneId: !Ref HostedZoneId
+        Comment: Zone apex alias targeted to myELB LoadBalancer
+        RecordSets:
+        - Name: cloudformation.abdelalitraining.com
+          Type: A
+          AliasTarget:
+            HostedZoneId: !GetAtt
+                          - LoadBalancer
+                          - CanonicalHostedZoneID
+            DNSName: !GetAtt
+                      - LoadBalancer
+                      - DNSName
 
     # ec2 security group
     
@@ -66,49 +368,8 @@ Resources:
             CidrIp: 0.0.0.0/0
         Tags: 
           - Tag
-        VpcId: !Ref VpcId
+        VpcId: !Ref VPC
 
-
-    # ec2 instance
-    
-    Ec2Instance: 
-      Type: AWS::EC2::Instance
-      Properties: 
-        ImageId: ami-0f5094faf16f004eb
-        InstanceType: t2.medium
-        AvailabilityZone: AvailabilityZone
-        SubnetId: !Ref SubnetId
-        Tags:
-           - Key: !Ref EC2TagKey0
-             Value: !Ref EC2TagValue0
-             
-           - Key: !Ref EC2TagKey1
-             Value: !Ref EC2TagValue1
-             
-        BlockDeviceMappings: 
-          - DeviceName: "/dev/sdm"
-            Ebs: 
-              VolumeType: "io1"
-              Iops: "200"
-              DeleteOnTermination: "false"
-              VolumeSize: "20"
-        SecurityGroups: 
-            - String
-        Volumes:
-           - Device: String
-             VolumeId: String
-        UserData:
-           
-
-        KeyName: 
-          Ref: !Ref KeyName
-        NetworkInterfaces: 
-          - AssociatePublicIpAddress: "true"
-            DeviceIndex: "0"
-            GroupSet: 
-              - Ref: "myVPCEC2SecurityGroup"
-            SubnetId: 
-              Ref: "PublicSubnet"
 
     # s3 bucket
     S3ArtifactStore:
@@ -254,7 +515,36 @@ Resources:
           Location: !Ref S3ArtifactStore
     
     
-    
+    # ec2 insatance profile
+    EC2Role:
+      Type: 'AWS::IAM::Role'
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - ec2.amazonaws.com
+              Action:
+                - 'sts:AssumeRole'
+        Path: /
+        Policies:
+          - PolicyName: EC2S3ReadOnlyPolicy
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: 's3:GetObject'
+                  Resource: '*'
+    EC2InstanceProfile:
+      Type: 'AWS::IAM::InstanceProfile'
+      Properties:
+        Path: /
+        Roles:
+          - !Ref EC2Role
+        
+        
     # service roles
     CodeBuildRole:
       Type: AWS::IAM::Role
@@ -305,4 +595,10 @@ Resources:
                      - 
                 
            
-      
+  
+  
+Outputs:
+   LoadBalancer:
+     Value: !GetAtt
+        - LoadBalancer
+        - DNSName
