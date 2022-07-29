@@ -1,20 +1,7 @@
 Mappings: 
   RegionMap: 
-    us-east-1: 
-      HVM64: "ami-0ff8a91507f77f867"
-      HVMG2: "ami-0a584ac55a7631c0c"
-    us-west-1: 
-      HVM64: "ami-0bdb828fd58c52235"
-      HVMG2: "ami-066ee5fd4a9ef77f1"
-    eu-west-1: 
-      HVM64: "ami-047bb4163c506cd98"
-      HVMG2: "ami-31c2f645"
-    ap-southeast-1: 
-      HVM64: "ami-08569b978cc4dfa10"
-      HVMG2: "ami-0be9df32ae9f92309"
-    ap-northeast-1: 
-      HVM64: "ami-06cd52961ce9f0d85"
-      HVMG2: "ami-053cdd503598e4a9d"
+    us-west-2: 
+      HVM64: "ami-098e42ae54c764c35"
 
 
 Parameters:
@@ -30,43 +17,65 @@ Parameters:
 
   EC2TagKey0:
     Type: String
-    Default: ec2TagKey0
+    Default: Name
+    
     
   EC2TagValue0:
     Type: String
-    Default: ec2TagValue0
+    Default: nginx-server
+    
     
   EC2TagKey1:
     Type: String
-    Default: ec2TagKey1
+    Default: Type
+    
     
   EC2TagValue1:
     Type: String
-    Default: ec2TagValue1
-    
+    Default: Dev
+   
   RepoName:
+    Description: The name of your codecommit repo
     Type: String
     
   BranchName:
+    Description: The branch that you want the s3 bucket to push code to it
     Type: String
     
   CodeDeployServiceRole:
-    Type: String
-    
-  S3bucketKey:
+     Description: The codedeploy role that enable the service to call other services on your behalf
      Type: String
-     Default: codecommitcode
+    
+  DeploymentGroupName:
+     Description: Deployment Group Name 
+     Type: String
+     
+  S3ArtifactStoreName:
+      Description: the artifact bucket that will be used by aws codepipeline to store the artifacts
+      Type: String
       
-  Subnets:
-    Type: 'List<AWS::EC2::Subnet::Id>'
-    Description: A list of subnets for the Auto Scaling group
+  S3BucketName:
+     Description: The Name of the s3 bucket that codecommit will pull the code from
+     Type: String
+     
+  S3BucketKey:
+     Description: The name of application 
+     Type: String
       
   HostedZoneId:
      Description: The HostedZoneId
      Type: AWS::Route53::HostedZone::Id
      
+  SSLARN:
+      Description: The ssl arn of your domain
+      Type: String
+     
   EnvironmentName:
     Description: An environment name that is prefixed to resource names
+    Type: String
+    
+  Route53RecordName:
+    Description: the record name of the elb alias
     Type: String
      
   VpcCIDR:
@@ -93,6 +102,17 @@ Parameters:
     Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
     Type: String
     Default: 10.192.21.0/24
+    
+#Conditions:
+#  Publish: !Equals
+#    - !Ref PublishToTopic
+#    - True
+#  CreateSubscription: !And
+#    - !Condition Publish
+#    - !Not
+#      - !Equals
+#        - !Ref NotificationEmail
+#        - ''
 
 Resources:
     # keypair
@@ -129,15 +149,15 @@ Resources:
         VpcId: !Ref VPC
         
     PublicSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: !Select [ 0, !GetAZs '' ]
-      CidrBlock: !Ref PublicSubnet1CIDR
-      MapPublicIpOnLaunch: true
-      Tags:
-        - Key: Name
-          Value: !Sub ${EnvironmentName} Public Subnet (AZ1)
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        AvailabilityZone: !Select [ 0, !GetAZs '' ]
+        CidrBlock: !Ref PublicSubnet1CIDR
+        MapPublicIpOnLaunch: true
+        Tags:
+          - Key: Name
+            Value: !Sub ${EnvironmentName} Public Subnet (AZ1)
 
     PublicSubnet2:
       Type: AWS::EC2::Subnet
@@ -173,12 +193,12 @@ Resources:
             Value: !Sub ${EnvironmentName} Private Subnet (AZ2)
             
     PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: !Sub ${EnvironmentName} Public Routes
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref VPC
+        Tags:
+          - Key: Name
+            Value: !Sub ${EnvironmentName} Public Routes
 
     DefaultPublicRoute:
       Type: AWS::EC2::Route
@@ -212,20 +232,21 @@ Resources:
     EbsVolume:
       Type: AWS::EC2::Volume
       Properties: 
-        AvailabilityZone: !Ref AvailabilityZone
+        AvailabilityZone: !GetAtt
+                          - PublicSubnet1
+                          - AvailabilityZone
         Size: 20
         Tags: 
           - Key: Name
             Value: Ebs-volume
-        Throughput: 100
         VolumeType: gp2
 
     # ec2 instance
-    Ec2Instance: 
+    Ec2Instance1: 
       Type: AWS::EC2::Instance
       Properties: 
         ImageId: !FindInMap
-                 - Mappings
+                 - RegionMap
                  - !Ref 'AWS::Region'
                  - HVM64
         InstanceType: !Ref InstanceType
@@ -242,19 +263,17 @@ Resources:
              Value: !Ref EC2TagValue1
              
         BlockDeviceMappings: 
-          - DeviceName: "/dev/sda"
+          - DeviceName: "/dev/sdh"
             Ebs: 
               VolumeType: "io1"
               Iops: "200"
               DeleteOnTermination: "false"
               VolumeSize: "20"
         SecurityGroupIds:
-             - GetAtt
+             - !GetAtt
                - Ec2SSecurityGroup
                - GroupId
-        Volumes:
-           - Device: /dev/sdb
-             VolumeId: !Ref EbsVolume
+      
         UserData:
             Fn::Base64: !Sub |
                 #!/bin/bash
@@ -266,8 +285,77 @@ Resources:
                 sudo wget https://aws-codedeploy-us-east-1.s3.amazonaws.com/latest/install
                 sudo chmod +x ./install
                 sudo ./install auto
-        KeyName: 
-          Ref: !Ref KeyPair
+        KeyName: !Ref KeyPair
+    
+    Ec2Instance2: 
+      Type: AWS::EC2::Instance
+      Properties: 
+        ImageId: !FindInMap
+                 - RegionMap
+                 - !Ref 'AWS::Region'
+                 - HVM64
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile: !Ref EC2InstanceProfile
+        AvailabilityZone: !GetAtt
+                          - PublicSubnet1
+                          - AvailabilityZone
+        SubnetId: !Ref PublicSubnet1
+        Tags:
+           - Key: !Ref EC2TagKey0
+             Value: !Ref EC2TagValue0
+             
+           - Key: !Ref EC2TagKey1
+             Value: !Ref EC2TagValue1
+             
+        BlockDeviceMappings: 
+          - DeviceName: "/dev/sdh"
+            Ebs: 
+              VolumeType: "io1"
+              Iops: "200"
+              DeleteOnTermination: "false"
+              VolumeSize: "20"
+        SecurityGroupIds:
+             - !GetAtt
+               - Ec2SSecurityGroup
+               - GroupId
+        UserData:
+            Fn::Base64: !Sub |
+                #!/bin/bash
+                sudo amazon-linux-extras install nginx1 -y
+                sudo service nginx start
+                sudo yum install ruby -y
+                sudo yum install wget -y
+                cd /home/ec2-user
+                sudo wget https://aws-codedeploy-us-east-1.s3.amazonaws.com/latest/install
+                sudo chmod +x ./install
+                sudo ./install auto
+        KeyName: !Ref KeyPair
+     # ec2 security group
+    
+    Ec2SSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties: 
+        GroupDescription: Security group for ec2 allow ssh and http
+        GroupName: ec2-cloudformation-sg
+        SecurityGroupEgress: 
+            - IpProtocol: "-1"
+              CidrIp: 0.0.0.0/0
+        SecurityGroupIngress: 
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            SourceSecurityGroupId: !GetAtt 
+                  - LoadBalancerSg
+                  - GroupId
+          - IpProtocol: tcp
+            FromPort: 22
+            ToPort: 22
+            CidrIp: 0.0.0.0/0
+        Tags: 
+          - Key: Name
+            Value: Ec2SSecurityGroup
+        VpcId: !Ref VPC
+
 
     # elb sg
     LoadBalancerSg:
@@ -284,12 +372,17 @@ Resources:
             FromPort: 80
             ToPort: 80
             CidrIp: 0.0.0.0/0
+            
+          - IpProtocol: tcp
+            FromPort: 443
+            ToPort: 443
+            CidrIp: 0.0.0.0/0
   
         SecurityGroupEgress:
           - IpProtocol: "-1"
             CidrIp: 0.0.0.0/0
             
-    # elb and tg
+    # elb 
     
     LoadBalancer:
       Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -306,7 +399,9 @@ Resources:
           - Key: Name
             Value: cloudformation-loadbalancer
         Type: application
-
+    
+    # target group
+    
     TargetGroup:
       Type: AWS::ElasticLoadBalancingV2::TargetGroup
       Properties: 
@@ -314,11 +409,10 @@ Resources:
         HealthCheckPort: 80
         HealthCheckProtocol: HTTP
         Targets:
-           - AvailabilityZone: !GetAtt
-                               - PublicSubnet1
-                               - AvailabilityZone
-             Id: !Ref Ec2Instance
-             Port: 80
+            - Id: !Ref Ec2Instance1
+              Port: 80
+            - Id: !Ref Ec2Instance2
+              Port: 80
 
         Name: cloudformation-targetgroup
         Port: 80
@@ -327,6 +421,46 @@ Resources:
           - Key: Name
             Value: cloudformation-targetgroup
         VpcId: !Ref VPC
+        
+    # elb listener
+    Listener:
+      Type: 'AWS::ElasticLoadBalancingV2::Listener'
+      Properties:
+        DefaultActions:
+          - Type: "redirect"
+            RedirectConfig:
+             Protocol: "HTTPS"
+             Port: 443
+             Host: "#{host}"
+             Path: "/#{path}"
+             Query: "#{query}"
+             StatusCode: "HTTP_301"
+            
+        LoadBalancerArn: !Ref LoadBalancer
+        Port: '80'
+        Protocol: HTTP
+        
+    # elb listener
+    ListenerHttps:
+      Type: 'AWS::ElasticLoadBalancingV2::Listener'
+      Properties:
+        Certificates:
+         - CertificateArn: !Ref SSLARN
+        DefaultActions:
+          - Type: forward
+            TargetGroupArn: !Ref TargetGroup
+        LoadBalancerArn: !Ref LoadBalancer
+        Port: 443
+        Protocol: HTTPS
+    
+    # ssl
+    LoadBalancerSSL:
+      Type: AWS::ElasticLoadBalancingV2::ListenerCertificate
+      Properties: 
+        Certificates: 
+          - CertificateArn: !Ref SSLARN
+        ListenerArn: !Ref ListenerHttps
+
       
     # route53 record
     ELBRecord:
@@ -335,7 +469,7 @@ Resources:
         HostedZoneId: !Ref HostedZoneId
         Comment: Zone apex alias targeted to myELB LoadBalancer
         RecordSets:
-        - Name: cloudformation.abdelalitraining.com
+        - Name: !Ref Route53RecordName
           Type: A
           AliasTarget:
             HostedZoneId: !GetAtt
@@ -345,42 +479,30 @@ Resources:
                       - LoadBalancer
                       - DNSName
 
-    # ec2 security group
-    
-    Ec2SSecurityGroup:
-      Type: AWS::EC2::SecurityGroup
-      Properties: 
-        GroupDescription: Security group for ec2 allow ssh and http
-        GroupName: ec2-cloudformation-sg
-        SecurityGroupEgress: 
-          - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          SourceSecurityGroupId: !GetAtt 
-                - LoadBalancerSg
-                - GroupId
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
-        SecurityGroupIngress: 
-          - IpProtocol: "-1"
-            CidrIp: 0.0.0.0/0
-        Tags: 
-          - Tag
-        VpcId: !Ref VPC
-
-
     # s3 bucket
     S3ArtifactStore:
       Type: 'AWS::S3::Bucket'
-      Properties: {}
+      Properties: 
+        Tags:
+          - Key: Name
+            Value: !Ref S3ArtifactStoreName
      
 
     # sns topic
     SnsTopic:
       Type: AWS::SNS::Topic
       Properties: {}
+      
+    # sns subscription
+    #EmailNotification:
+    #  Condition: CreateSubscription
+    #  Type: AWS::SNS::Subscription
+    #  Properties:
+    #    Endpoint: !Ref NotificationEmail
+    #    Protocol: email
+    #    TopicArn: !Ref SnsTopic
+      
+    
     
     # cloudwatch alarm
     CpuUtilizationAlarm:
@@ -398,34 +520,18 @@ Resources:
     MyRepo:
       Type: AWS::CodeCommit::Repository
       Properties:
-        RepositoryName: MyDemoRepo
+        RepositoryName: !Ref RepoName
         RepositoryDescription: This is a repository for my project with code from MySourceCodeBucket.
+        Tags:
+           - Key: Name
+             Value: !Ref RepoName
         Code:
           BranchName: !Ref BranchName
           S3: 
-            Bucket: cloudformation-pipeline-27 
-            Key:  SampleApp_Linux
+            Bucket: !Ref S3BucketName
+            Key:  !Ref S3BucketKey
             
-    #codebuild project
-    CodeBuildProject:
-      Type: AWS::CodeBuild::Project
-      Properties:
-        ServiceRole: !GetAtt CodeBuildRole.Arn
-        Artifacts:
-          Type: CODEPIPELINE
-        Environment:
-          Type: LINUX_CONTAINER
-          ComputeType: BUILD_GENERAL1_SMALL
-          Image: aws/codebuild/ubuntu-base:14.04
-          EnvironmentVariables:
-            - Name: varName1
-              Value: varValue1
-        Source:
-          Type: CODEPIPELINE
-        TimeoutInMinutes: 10
-        
-        
-    
+            
     # codedeploy application
     
     CodeDeployApplication: 
@@ -454,9 +560,14 @@ Resources:
           ApplicationName: !Ref CodeDeployApplication
           ServiceRoleArn: !Ref CodeDeployServiceRole    
           DeploymentGroupName: !Ref DeploymentGroupName
+          DeploymentConfigName: !Ref CodeDeployConfig
           Ec2TagFilters:
             - Key: !Ref EC2TagKey0
               Value: !Ref EC2TagValue0
+              Type: KEY_AND_VALUE
+              
+            - Key: !Ref EC2TagKey1
+              Value: !Ref EC2TagValue1
               Type: KEY_AND_VALUE
           
           AutoRollbackConfiguration:
@@ -469,8 +580,8 @@ Resources:
                 - DeploymentFailure
               TriggerName: MyTarget
               TriggerTargetArn: !Ref SnsTopic
-                  
-                  
+              
+              
     # codepipeline
     
     AppPipeline:
@@ -507,15 +618,33 @@ Resources:
                   Version: 1
                   Provider: CodeDeploy
                 Configuration:
-                  ApplicationName: !Ref ApplicationName
-                  DeploymentGroupName: !Ref DeploymentGroupName
+                  ApplicationName: !Ref CodeDeployApplication
+                  DeploymentGroupName: !Ref AppDeploymentGroup
                 RunOrder: 1
         ArtifactStore:
           Type: S3
           Location: !Ref S3ArtifactStore
+          
+          
+    # web hook to trigger my pipeline
+          
+    PipelineWebHook:
+      Type: AWS::CodePipeline::Webhook
+      Properties: 
+        Authentication: UNAUTHENTICATED
+        AuthenticationConfiguration: {}
+        Filters: 
+          - JsonPath: "$.ref" 
+            MatchEquals: refs/heads/{Branch} 
+        Name: MyWebhook 
+        TargetAction: Source
+        TargetPipeline: !Ref AppPipeline
+        TargetPipelineVersion: !GetAtt
+                               - AppPipeline
+                               - Version
+
     
-    
-    # ec2 insatance profile
+     # ec2 insatance profile
     EC2Role:
       Type: 'AWS::IAM::Role'
       Properties:
@@ -543,62 +672,127 @@ Resources:
         Path: /
         Roles:
           - !Ref EC2Role
-        
-        
-    # service roles
-    CodeBuildRole:
-      Type: AWS::IAM::Role
+          
+    #codebuild role
+    CodeBuildServiceRole:
+      Type: 'AWS::IAM::Role'
       Properties:
         AssumeRolePolicyDocument:
+          Version: 2012-10-17
           Statement:
-          - Action: ['sts:AssumeRole']
-            Effect: Allow
-            Principal:
-              Service: [codebuild.amazonaws.com]
-          Version: '2012-10-17'
+            - Effect: Allow
+              Principal:
+                Service:
+                  - codepipeline.amazonaws.com
+              Action: 'sts:AssumeRole'
         Path: /
         Policies:
-          - PolicyName: CodeBuildAccess
+          - PolicyName: AWS-codeBuild-Service
             PolicyDocument:
-              Version: '2012-10-17'
+              Version: 2012-10-17
               Statement:
-                - Action:
-                  - 'logs:*'
-                  - 'ec2:CreateNetworkInterface'
-                  - 'ec2:DescribeNetworkInterfaces'
-                  - 'ec2:DeleteNetworkInterface'
-                  - 'ec2:DescribeSubnets'
-                  - 'ec2:DescribeSecurityGroups'
-                  - 'ec2:DescribeDhcpOptions'
-                  - 'ec2:DescribeVpcs'
-                  - 'ec2:CreateNetworkInterfacePermission'
-                  Effect: Allow
+                - Effect: Allow
+                  Action:
+                    - 'logs:CreateLogGroup'
+                    - 'logs:CreateLogStream'
+                    - 'logs:PutLogEvents'
                   Resource: '*'
-                  
-    CodePipelineRole:
-      Type: AWS::IAM::Role
+                - Effect: Allow
+                  Action:
+                    - 's3:PutObject'
+                    - 's3:GetObject'
+                    - 's3:GetObjectVersion'
+                    - 's3:GetBucketAcl'
+                    - 's3:GetBucketLocation'
+                  Resource: '*'
+                - Effect: Allow
+                  Action:
+                    - 'codebuild:CreateReportGroup'
+                    - 'codebuild:CreateReport'
+                    - 'codebuild:UpdateReport'
+                    - 'codebuild:BatchPutTestCases'
+                    - 'codebuild:BatchPutCodeCoverages'
+                  Resource: '*'
+                - Effect: Allow
+                  Action:
+                    - 'sts:AssumeRole'
+                  Resource: '*'
+                - Effect: Allow
+                  Action:
+                    - 'ecr:*'
+                    - 'cloudtrail:LookupEvents'
+                    - 'iam:CreateServiceLinkedRole'
+                  Resource: '*'
+    
+    
+    #codepipeline role
+    CodePipelineServiceRole:
+      Type: 'AWS::IAM::Role'
       Properties:
         AssumeRolePolicyDocument:
+          Version: 2012-10-17
           Statement:
-          - Action: ['sts:AssumeRole']
-            Effect: Allow
-            Principal:
-              Service: [codepipeline.amazonaws.com]
-          Version: '2012-10-17'
+            - Effect: Allow
+              Principal:
+                Service:
+                  - codepipeline.amazonaws.com
+              Action: 'sts:AssumeRole'
         Path: /
         Policies:
-          - PolicyName: CodepipelineAccess
+          - PolicyName: AWS-CodePipeline-Service-3
             PolicyDocument:
-                Version: '2012-10-17'
-                Statement:
-                   - Action:
-                     - 
-                
-           
-  
-  
-Outputs:
-   LoadBalancer:
-     Value: !GetAtt
-        - LoadBalancer
-        - DNSName
+              Version: 2012-10-17
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - 'codecommit:CancelUploadArchive'
+                    - 'codecommit:GetBranch'
+                    - 'codecommit:GetCommit'
+                    - 'codecommit:GetUploadArchiveStatus'
+                    - 'codecommit:UploadArchive'
+                  Resource: '*'
+                - Effect: Allow
+                  Action:
+                    - 'codedeploy:CreateDeployment'
+                    - 'codedeploy:GetApplicationRevision'
+                    - 'codedeploy:GetDeployment'
+                    - 'codedeploy:GetDeploymentConfig'
+                    - 'codedeploy:RegisterApplicationRevision'
+                  Resource: '*'
+                - Effect: Allow
+                  Action:
+                    - 'codebuild:BatchGetBuilds'
+                    - 'codebuild:StartBuild'
+                  Resource: '*'
+                - Effect: Allow
+                  Action:
+                    - 'devicefarm:ListProjects'
+                    - 'devicefarm:ListDevicePools'
+                    - 'devicefarm:GetRun'
+                    - 'devicefarm:GetUpload'
+                    - 'devicefarm:CreateUpload'
+                    - 'devicefarm:ScheduleRun'
+                  Resource: '*'
+                - Effect: Allow
+                  Action:
+                    - 'lambda:InvokeFunction'
+                    - 'lambda:ListFunctions'
+                  Resource: '*'
+                - Effect: Allow
+                  Action:
+                    - 'iam:PassRole'
+                  Resource: '*'
+                - Effect: Allow
+                  Action:
+                    - 'elasticbeanstalk:*'
+                    - 'ec2:*'
+                    - 'elasticloadbalancing:*'
+                    - 'autoscaling:*'
+                    - 'cloudwatch:*'
+                    - 's3:*'
+                    - 'sns:*'
+                    - 'cloudformation:*'
+                    - 'rds:*'
+                    - 'sqs:*'
+                    - 'ecs:*'
+                  Resource: '*'
