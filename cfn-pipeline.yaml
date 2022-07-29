@@ -486,6 +486,10 @@ Resources:
         Tags:
           - Key: Name
             Value: !Ref S3ArtifactStoreName
+            
+    S3codebuildArtifact:
+      Type: 'AWS::S3::Bucket'
+      Properties: {}
      
 
     # sns topic
@@ -530,7 +534,40 @@ Resources:
           S3: 
             Bucket: !Ref S3BucketName
             Key:  !Ref S3BucketKey
-            
+    
+    # codebuild project
+    CodeBuildProject:
+      Type: AWS::CodeBuild::Project
+      Properties: 
+        Artifacts: 
+            Location: !Ref S3codebuildArtifact
+            Name: MyArtifact
+            NamespaceType: BUILD_ID
+            Packaging: ZIP
+            Path: MyArtifact
+            Type: S3
+        Environment: 
+            ComputeType: BUILD_GENERAL1_MEDIUM
+            EnvironmentVariables: 
+              - Name: firstname
+                Type: PLAINTEXT
+                Value: abdelalijadelmoula
+            Image: aws/codebuild/standard:5.0
+            PrivilegedMode: True
+            Type: LINUX_CONTAINER
+        Name: cloudformation-build-project
+        ServiceRole: !GetAtt
+                     - CodeBuildServiceRole
+                     - Arn
+        Source: 
+            Location: !GetAtt
+                      - MyRepo
+                      - CloneUrlHttp
+            Type: CODECOMMIT
+        Tags: 
+          - Key: Name
+            Value: aws-cloudformation-codebuild
+       
             
     # codedeploy application
     
@@ -581,7 +618,6 @@ Resources:
               TriggerName: MyTarget
               TriggerTargetArn: !Ref SnsTopic
               
-              
     # codepipeline
     
     AppPipeline:
@@ -607,11 +643,27 @@ Resources:
                   RepositoryName: !Ref RepoName
                   PollForSourceChanges: false
                 RunOrder: 1
+          - Name: Build
+            Actions:
+              - Name: BuildAction
+                ActionTypeId:
+                  Category: Source
+                  Owner: AWS
+                  Version: 1
+                  Provider: CodeCommit
+                OutputArtifacts:
+                  - Name: BuildOutput
+                Configuration:
+                  BranchName: !Ref BranchName
+                  RepositoryName: !Ref RepoName
+                  PollForSourceChanges: false
+                RunOrder: 1
+            
           - Name: Deploy
             Actions:
               - Name: DeployAction
                 InputArtifacts:
-                  - Name: SourceOutput
+                  - Name: BuildOutput
                 ActionTypeId:
                   Category: Deploy
                   Owner: AWS
@@ -624,7 +676,6 @@ Resources:
         ArtifactStore:
           Type: S3
           Location: !Ref S3ArtifactStore
-          
           
     # web hook to trigger my pipeline
           
@@ -645,6 +696,7 @@ Resources:
 
     
      # ec2 insatance profile
+     
     EC2Role:
       Type: 'AWS::IAM::Role'
       Properties:
@@ -796,3 +848,13 @@ Resources:
                     - 'sqs:*'
                     - 'ecs:*'
                   Resource: '*'
+                  
+                  
+  Outputs:
+      CodecommitRepoHttpUrl:
+        Description: The http url of your codecommit repo
+        Value: !GetAtt
+               - MyRepo
+               - CloneUrlHttp
+        Export:
+          Name: CodecommitRepoHttpUrl
