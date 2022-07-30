@@ -49,6 +49,7 @@ Resources:
           from botocore.vendored import requests
 
           def handler(event, context):
+              print(event)
               try:
                   bucket = event['ResourceProperties']['BucketName']
 

@@ -253,6 +253,7 @@ Resources:
                   mode: "000744"
                   owner: "ec2-user"
                   group: "ec2-user"
+                  
                 "/usr/share/nginx/html/abdelali.html":
                   content: !Sub |
                           <h1> Hi My name is ${Name} </h1>
