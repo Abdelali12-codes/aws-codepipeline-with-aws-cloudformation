@@ -227,109 +227,126 @@ Resources:
         Tags:
           - Key: Name
             Value: !Sub ${EnvironmentName} Private Routes (AZ1)
-    # ebs volume
-    EbsVolume:
-      Type: AWS::EC2::Volume
-      Properties: 
-        AvailabilityZone: !GetAtt
-                          - PublicSubnet1
-                          - AvailabilityZone
-        Size: 20
-        Tags: 
-          - Key: Name
-            Value: Ebs-volume
-        VolumeType: gp2
+    # launch template 
+    myLaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Metadata:
+        AWS::CloudFormation::Init: 
+          config:
+              files:
+                "/home/ec2-user/script.sh":
+                  content: !Sub |
+                          #!/bin/bash
+                          sudo amazon-linux-extras install nginx1 -y
+                          sudo service nginx start
+                          sudo yum install ruby -y
+                          sudo yum install wget -y
+                          cd /home/ec2-user
+                          sudo wget https://aws-codedeploy-us-east-1.s3.amazonaws.com/latest/install
+                          sudo chmod +x ./install
+                          sudo ./install auto
+                  mode: "000744"
+                  owner: "ec2-user"
+                  group: "ec2-user"
+                "/usr/share/nginx/html/index.html":
+                  content: !Sub |
+                          <h1> Hi My name is ${Name} </h1>
+                  mode: "000644"
+                  owner: "root"
+                  group: "root"
+                  # The cfn-hup.conf file stores the name of the stack and the AWS credentials that the cfn-hup daemon targets.
+                "/etc/cfn/cfn-hup.conf":
+                  content: !Sub |
+                    [main]
+                    stack=${AWS::StackId}
+                    region=${AWS::Region}
+                    # The interval used to check for changes to the resource metadata in minutes. Default is 15
+                    interval=2
+                  mode: "000400"
+                  owner: "root"
+                  group: "root"
+                # The user actions that the cfn-hup daemon calls periodically are defined in the hooks.conf configuration file.
+                # To support composition of several applications deploying change notification hooks, cfn-hup supports a directory named hooks.d that is located in the hooks configuration directory. You can place one or more additional hooks configuration files in the hooks.d directory. The additional hooks files must use the same layout as the hooks.conf file.
+                "/etc/cfn/hooks.d/cfn-auto-reloader.conf":
+                  content: !Sub |
+                    [cfn-auto-reloader-hook]
+                    triggers=post.update
+                    path=Resources.WebServerHost.Metadata.AWS::CloudFormation::Init
+                    action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource WebServerHost --region ${AWS::Region}
+                  mode: "000400"
+                  owner: "root"
+                  group: "root"
+      Properties:
+        LaunchTemplateName: !Sub ${AWS::StackName}-launch-template
+        LaunchTemplateData:
+          #ImageId:  !FindInMap 
+          #  - RegionMap
+          #  - !Ref 'AWS::Region'
+          #  - AMI
+          ImageId: !FindInMap
+                 - RegionMap
+                 - !Ref 'AWS::Region'
+                 - HVM64
+          InstanceType: !Ref InstanceType
+          #NetworkInterfaces:
+          #  - DeviceIndex: 0
+          #    AssociatePublicIpAddress: true
+          #    Groups:
+          #      - sg-0a379288ef0bd9430
+          #    DeleteOnTermination: true
+          KeyName: !Ref KeyPair
+          IamInstanceProfile:
+            Name: !Ref EC2InstanceProfile
+          SecurityGroupIds:
+          - !GetAtt 
+            - InstanceSecurityGroup
+            - GroupId
 
-    # ec2 instance
-    Ec2Instance1: 
-      Type: AWS::EC2::Instance
-      Properties: 
-        ImageId: !FindInMap
-                 - RegionMap
-                 - !Ref 'AWS::Region'
-                 - HVM64
-        InstanceType: !Ref InstanceType
-        IamInstanceProfile: !Ref EC2InstanceProfile
-        AvailabilityZone: !GetAtt
-                          - PublicSubnet1
-                          - AvailabilityZone
-        SubnetId: !Ref PublicSubnet1
-        Tags:
-           - Key: !Ref EC2TagKey0
-             Value: !Ref EC2TagValue0
-             
-           - Key: !Ref EC2TagKey1
-             Value: !Ref EC2TagValue1
-             
-        BlockDeviceMappings: 
-          - DeviceName: "/dev/sdh"
-            Ebs: 
-              VolumeType: "io1"
-              Iops: "200"
-              DeleteOnTermination: "false"
-              VolumeSize: "20"
-        SecurityGroupIds:
-             - !GetAtt
-               - Ec2SSecurityGroup
-               - GroupId
-      
-        UserData:
-            Fn::Base64: !Sub |
+
+          UserData: 
+          Fn::Base64: !Sub |
+                
                 #!/bin/bash
-                sudo amazon-linux-extras install nginx1 -y
-                sudo service nginx start
-                sudo yum install ruby -y
-                sudo yum install wget -y
-                cd /home/ec2-user
-                sudo wget https://aws-codedeploy-us-east-1.s3.amazonaws.com/latest/install
-                sudo chmod +x ./install
-                sudo ./install auto
-        KeyName: !Ref KeyPair
-    
-    Ec2Instance2: 
-      Type: AWS::EC2::Instance
-      Properties: 
-        ImageId: !FindInMap
-                 - RegionMap
-                 - !Ref 'AWS::Region'
-                 - HVM64
-        InstanceType: !Ref InstanceType
-        IamInstanceProfile: !Ref EC2InstanceProfile
-        AvailabilityZone: !GetAtt
-                          - PublicSubnet1
-                          - AvailabilityZone
-        SubnetId: !Ref PublicSubnet1
-        Tags:
-           - Key: !Ref EC2TagKey0
-             Value: !Ref EC2TagValue0
-             
-           - Key: !Ref EC2TagKey1
-             Value: !Ref EC2TagValue1
-             
-        BlockDeviceMappings: 
-          - DeviceName: "/dev/sdh"
-            Ebs: 
-              VolumeType: "io1"
-              Iops: "200"
-              DeleteOnTermination: "false"
-              VolumeSize: "20"
-        SecurityGroupIds:
-             - !GetAtt
-               - Ec2SSecurityGroup
-               - GroupId
-        UserData:
-            Fn::Base64: !Sub |
-                #!/bin/bash
-                sudo amazon-linux-extras install nginx1 -y
-                sudo service nginx start
-                sudo yum install ruby -y
-                sudo yum install wget -y
-                cd /home/ec2-user
-                sudo wget https://aws-codedeploy-us-east-1.s3.amazonaws.com/latest/install
-                sudo chmod +x ./install
-                sudo ./install auto
-        KeyName: !Ref KeyPair
-     # ec2 security group
+                yum update -y aws-cfn-bootstrap
+                # Start cfn-init 
+                /opt/aws/bin/cfn-init -s ${AWS::StackId} -r myLaunchTemplate --region ${AWS::Region} || error_exit 'Failed to run cfn-init'
+                # Run the script
+                sudo bash /home/ec2-user/script.sh
+                # cfn-hup daemon
+                /opt/aws/bin/cfn-hup || error_exit 'Failed to start cfn-hup'
+                # all dones succefully send signal
+                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource AutoScaling --region ${AWS::Region}
+        
+          TagSpecifications:
+          - ResourceType: instance
+            Tags:
+            - Key: environment
+              Value: development
+          - ResourceType: volume
+            Tags:
+            - Key: environment
+              Value: development
+    # autoscaling
+    AutoScaling:
+      Type: AWS::AutoScaling::AutoScalingGroup
+      CreationPolicy:
+        ResourceSignal:
+          Timeout: PT15M
+      Properties:
+        LaunchTemplate:
+          LaunchTemplateId: !Ref myLaunchTemplate
+          Version: !GetAtt 
+            - myLaunchTemplate
+            - LatestVersionNumber
+
+        MaxSize: '3'
+        MinSize: '1'
+        DesiredCapacity: '2'
+        TargetGroupARNs: 
+          - !Ref TargetGroup
+        VPCZoneIdentifier: 
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
     
     Ec2SSecurityGroup:
       Type: AWS::EC2::SecurityGroup
@@ -485,11 +502,13 @@ Resources:
         Tags:
           - Key: Name
             Value: !Ref S3ArtifactStoreName
+
+    LambdaUsedToCleanUp:
+      Type: Custom::cleanupbucket
+      Properties:
+        ServiceToken: !ImportValue EmptyS3BucketLambda
+        BucketName: !Ref myBucketResource
             
-    S3codebuildArtifact:
-      Type: 'AWS::S3::Bucket'
-      Properties: {}
-     
 
     # sns topic
     SnsTopic:
@@ -598,19 +617,12 @@ Resources:
           ServiceRoleArn: !Ref CodeDeployServiceRole    
           DeploymentGroupName: !Ref DeploymentGroupName
           DeploymentConfigName: !Ref CodeDeployConfig
-          Ec2TagFilters:
-            - Key: !Ref EC2TagKey0
-              Value: !Ref EC2TagValue0
-              Type: KEY_AND_VALUE
-              
-            - Key: !Ref EC2TagKey1
-              Value: !Ref EC2TagValue1
-              Type: KEY_AND_VALUE
-          
-          AutoRollbackConfiguration:
-               Enabled: True
-               Events:
-                  - DEPLOYMENT_FAILURE
+          AutoScalingGroups: 
+               - !Ref AutoScaling
+          #AutoRollbackConfiguration:
+          #     Enabled: True
+          #     Events:
+          #        - DEPLOYMENT_FAILURE
           TriggerConfigurations:
             - TriggerEvents:
                 - DeploymentSuccess

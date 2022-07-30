@@ -1,6 +1,5 @@
 # aws-codepipeline-with-aws-cloudformation
 
-
 ## check wether an object exist in a bucket
 
 ```
@@ -16,3 +15,7 @@ https://docs.aws.amazon.com/codepipeline/latest/userguide/reference-pipeline-str
 ```
 https://docs.aws.amazon.com/codepipeline/latest/userguide/tutorials-stackset-deployment.html
 ```
+
+- for more details about the aws cloudformation custom resource visit below link
+
+https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/template-custom-resources.html
