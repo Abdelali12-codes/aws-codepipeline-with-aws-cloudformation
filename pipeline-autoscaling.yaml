@@ -304,7 +304,7 @@ Resources:
 
 
           UserData: 
-          Fn::Base64: !Sub |
+           Fn::Base64: !Sub |
                 
                 #!/bin/bash
                 yum update -y aws-cfn-bootstrap
@@ -507,7 +507,7 @@ Resources:
       Type: Custom::cleanupbucket
       Properties:
         ServiceToken: !ImportValue EmptyS3BucketLambda
-        BucketName: !Ref myBucketResource
+        BucketName: !Ref S3ArtifactStore
             
 
     # sns topic

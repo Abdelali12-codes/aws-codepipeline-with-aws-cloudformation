@@ -486,7 +486,11 @@ Resources:
           - Key: Name
             Value: !Ref S3ArtifactStoreName
      
-
+    LambdaUsedToCleanUp:
+      Type: Custom::cleanupbucket
+      Properties:
+        ServiceToken: !ImportValue EmptyS3BucketLambda
+        BucketName: !Ref S3ArtifactStore
     # sns topic
     SnsTopic:
       Type: AWS::SNS::Topic
