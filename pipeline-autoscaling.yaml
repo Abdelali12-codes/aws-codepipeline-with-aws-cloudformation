@@ -69,6 +69,11 @@ Parameters:
   SSLARN:
       Description: The ssl arn of your domain
       Type: String
+
+  Name:
+      Description: The value that will be updated on the index.html file
+      Type: String
+      Default: Abdelali
      
   EnvironmentName:
     Description: An environment name that is prefixed to resource names
@@ -248,7 +253,7 @@ Resources:
                   mode: "000744"
                   owner: "ec2-user"
                   group: "ec2-user"
-                "/usr/share/nginx/html/index.html":
+                "/usr/share/nginx/html/abdelali.html":
                   content: !Sub |
                           <h1> Hi My name is ${Name} </h1>
                   mode: "000644"
@@ -299,7 +304,7 @@ Resources:
             Name: !Ref EC2InstanceProfile
           SecurityGroupIds:
           - !GetAtt 
-            - InstanceSecurityGroup
+            - Ec2SSecurityGroup
             - GroupId
 
 
@@ -424,12 +429,6 @@ Resources:
         HealthCheckPath: /
         HealthCheckPort: 80
         HealthCheckProtocol: HTTP
-        Targets:
-            - Id: !Ref Ec2Instance1
-              Port: 80
-            - Id: !Ref Ec2Instance2
-              Port: 80
-
         Name: cloudformation-targetgroup
         Port: 80
         Protocol: HTTP
